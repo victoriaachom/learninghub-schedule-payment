@@ -13,3 +13,4 @@ newman/
 
 # macOS
 .DS_Store
+.env
