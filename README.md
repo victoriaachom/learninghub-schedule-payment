@@ -207,24 +207,3 @@ To test prod, set the collection variable `profile` to `prod` and run folder 0.
 | Postman "Pay" test fails on a second run | The seed invoices are already paid. Run `docker compose down -v` |
 | Windows: `the input device is not a TTY` | Add `-T` to `docker compose exec` |
 
-## 9. Reflection and next steps
-
-**Decisions**
-
-- **One owner per entity.** I first stored course names and teachers on `class_session`, as an early version of the team spec did. When the team finalised the canonical model, I moved them out: schedule-service now owns only the slot and asks enrollment-service for course details. This removed duplicated data that could drift out of sync.
-- **Term invoices with lines.** Invoices are keyed by `(username, term_id)` with an `invoice_line` per course. The breakdown is stored history: it shows what was billed, even if the student later drops a course.
-- **Computed views.** Timetables are computed from weekly slots, and invoice status is computed from dates. Nothing goes stale, and no background job is needed.
-- **Flyway over `ddl-auto`.** I started with Hibernate generating the schema. I switched to versioned migrations so a fresh production database builds itself, and Hibernate only validates.
-- **Graceful degradation.** Every cross-service call has a timeout and a fallback, so each service can be developed and demonstrated on its own.
-
-**Challenges**
-
-- The skeleton's `ddl-auto: update` with `data.sql` would re-insert the seed rows on every restart, colliding with unique keys. Separating schema and seed data into Flyway locations, chosen per profile, fixed this.
-- I needed a realistic neighbour without the full team stack, so I wrote a small contract stub of enrollment-service in the team API shape.
-
-**Phase 2 plan**
-
-- Replace `CallerResolver`'s headers with Keycloak JWT validation (realm roles → `ROLE_*`), and forward the bearer token on calls to enrollment-service and schedule-service.
-- Register with Eureka, route through the team gateway, and call neighbours by `lb://` name.
-- Swap the enrollment stub for Renae's service.
-- Write a Gatling stress test on `/api/schedule/week` and `/api/payments/summary`.
