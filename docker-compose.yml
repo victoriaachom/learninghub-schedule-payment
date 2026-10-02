@@ -1,3 +1,12 @@
+# LearningHub - schedule-service and payment-service (Victoria Achom)
+#
+#   docker compose up --build                  # dev profile (PROFILE in .env)
+#   PROFILE=prod docker compose up --build     # prod profile
+#   docker compose down -v                     # stop and wipe the database
+#
+# postgres and config-service must be healthy before the business services
+# start, so they always receive their profile configuration.
+
 services:
   postgres:
     image: postgres:16
@@ -9,48 +18,33 @@ services:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d postgres"]
       interval: 5s
       retries: 10
     ports:
       - "5432:5432"
     networks: [lh-internal]
 
-  user-service:
-    build: ./user-service
-    environment:
-      SPRING_PROFILES_ACTIVE: ${PROFILE}
-      DB_URL: jdbc:postgresql://postgres:5432/userdb
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SERVER_PORT: 8101
-      EUREKA_ENABLED: "false"     # flip to true once discovery-service exists
-      EUREKA_URL: http://discovery-service:8761/eureka
+  config-service:
+    build: ./config-service
     ports:
-      - "8101:8101"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "8889:8888"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8888/actuator/health || exit 1"]
+      interval: 5s
+      retries: 20
     networks: [lh-internal]
     restart: unless-stopped
 
-  academic-service:
-    build: ./academic-service
-    environment:
-      SPRING_PROFILES_ACTIVE: ${PROFILE}
-      DB_URL: jdbc:postgresql://postgres:5432/academicdb
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SERVER_PORT: 8102
-      EUREKA_ENABLED: "false"     # flip to true once discovery-service exists
-      EUREKA_URL: http://discovery-service:8761/eureka
+  # Dev stand-in for Renae's enrollment-service: fixed JSON in the team API shape.
+  enrollment-service:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./stubs/enrollment/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./stubs/enrollment/html:/usr/share/nginx/html:ro
     ports:
-      - "8102:8102"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "8104:8104"
     networks: [lh-internal]
-    restart: unless-stopped
 
   schedule-service:
     build: ./schedule-service
@@ -60,67 +54,17 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       SERVER_PORT: 8103
-      EUREKA_ENABLED: "false"     # flip to true once discovery-service exists
-      EUREKA_URL: http://discovery-service:8761/eureka
+      ENROLLMENT_URL: http://enrollment-service:8104
+      EUREKA_ENABLED: "false"     # Phase 2: discovery-service
     ports:
       - "8103:8103"
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [lh-internal]
-    restart: unless-stopped
-
-  enrollment-service:
-    build: ./enrollment-service
-    environment:
-      SPRING_PROFILES_ACTIVE: ${PROFILE}
-      DB_URL: jdbc:postgresql://postgres:5432/enrollmentdb
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SERVER_PORT: 8104
-      EUREKA_ENABLED: "false"     # flip to true once discovery-service exists
-      EUREKA_URL: http://discovery-service:8761/eureka
-    ports:
-      - "8104:8104"
-    depends_on:
-      postgres:
+      config-service:
         condition: service_healthy
-    networks: [lh-internal]
-    restart: unless-stopped
-
-  learning-service:
-    build: ./learning-service
-    environment:
-      SPRING_PROFILES_ACTIVE: ${PROFILE}
-      DB_URL: jdbc:postgresql://postgres:5432/learningdb
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SERVER_PORT: 8105
-      EUREKA_ENABLED: "false"     # flip to true once discovery-service exists
-      EUREKA_URL: http://discovery-service:8761/eureka
-    ports:
-      - "8105:8105"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks: [lh-internal]
-    restart: unless-stopped
-
-  assessment-service:
-    build: ./assessment-service
-    environment:
-      SPRING_PROFILES_ACTIVE: ${PROFILE}
-      DB_URL: jdbc:postgresql://postgres:5432/assessmentdb
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SERVER_PORT: 8106
-      EUREKA_ENABLED: "false"     # flip to true once discovery-service exists
-      EUREKA_URL: http://discovery-service:8761/eureka
-    ports:
-      - "8106:8106"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      enrollment-service:
+        condition: service_started
     networks: [lh-internal]
     restart: unless-stopped
 
@@ -132,31 +76,18 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       SERVER_PORT: 8107
-      EUREKA_ENABLED: "false"     # flip to true once discovery-service exists
-      EUREKA_URL: http://discovery-service:8761/eureka
+      ENROLLMENT_URL: http://enrollment-service:8104
+      SCHEDULE_URL: http://schedule-service:8103
+      EUREKA_ENABLED: "false"     # Phase 2: discovery-service
     ports:
       - "8107:8107"
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [lh-internal]
-    restart: unless-stopped
-
-  analytics-service:
-    build: ./analytics-service
-    environment:
-      SPRING_PROFILES_ACTIVE: ${PROFILE}
-      DB_URL: jdbc:postgresql://postgres:5432/analyticsdb
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SERVER_PORT: 8108
-      EUREKA_ENABLED: "false"     # flip to true once discovery-service exists
-      EUREKA_URL: http://discovery-service:8761/eureka
-    ports:
-      - "8108:8108"
-    depends_on:
-      postgres:
+      config-service:
         condition: service_healthy
+      enrollment-service:
+        condition: service_started
     networks: [lh-internal]
     restart: unless-stopped
 

@@ -13,37 +13,22 @@ import java.util.List;
 
 
 @Entity
-@Table(name = "class_session", indexes = {
-        @Index(columnList = "course_id"),
-        @Index(columnList = "term_id")})
+@Table(name = "class_session")
 public class ClassSession {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Same database, so a real foreign key. Deleting a term deletes its sessions.
+    /** One slot per course. */
+    @Column(name = "course_id", nullable = false, unique = true)
+    private String courseId;
+
+    // Same database, so a real foreign key. Deleting a term deletes its slots.
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "term_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Term term;
-
-    @Column(name = "course_id", nullable = false)
-    private String courseId;
-
-    @Column(nullable = false)
-    private String subject;
-
-    @Column(name = "grade_level")
-    private String gradeLevel;
-
-    @Column(nullable = false)
-    private String color = "blue";
-
-    private String teacher;
-
-    @Column(name = "teacher_username")
-    private String teacherUsername;
 
     /** e.g. ["Mon","Wed","Fri"], stored as jsonb */
     @JdbcTypeCode(SqlTypes.JSON)
@@ -68,20 +53,10 @@ public class ClassSession {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-    public Term getTerm() { return term; }
-    public void setTerm(Term term) { this.term = term; }
     public String getCourseId() { return courseId; }
     public void setCourseId(String courseId) { this.courseId = courseId; }
-    public String getSubject() { return subject; }
-    public void setSubject(String subject) { this.subject = subject; }
-    public String getGradeLevel() { return gradeLevel; }
-    public void setGradeLevel(String gradeLevel) { this.gradeLevel = gradeLevel; }
-    public String getColor() { return color; }
-    public void setColor(String color) { this.color = color; }
-    public String getTeacher() { return teacher; }
-    public void setTeacher(String teacher) { this.teacher = teacher; }
-    public String getTeacherUsername() { return teacherUsername; }
-    public void setTeacherUsername(String teacherUsername) { this.teacherUsername = teacherUsername; }
+    public Term getTerm() { return term; }
+    public void setTerm(Term term) { this.term = term; }
     public List<String> getDays() { return days; }
     public void setDays(List<String> days) { this.days = days; }
     public LocalTime getStartTime() { return startTime; }

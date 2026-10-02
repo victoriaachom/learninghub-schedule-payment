@@ -3,13 +3,7 @@ package edu.lms.service;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 
-/**
- * Throwaway entity, here only to prove the DB connection works.
- * Replace with your real entities once services are assigned.
- *
- * Note the ownerId field: cross-service references are plain IDs,
- * never JPA relationships to another service's tables.
- */
+
 @Entity
 @Table(name = "items")
 public class Item {

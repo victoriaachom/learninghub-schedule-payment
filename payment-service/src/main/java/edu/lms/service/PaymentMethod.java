@@ -15,7 +15,7 @@ public class PaymentMethod {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @JsonIgnore   // always taken from the caller, never from the request body
+    @JsonIgnore  
     @Column(nullable = false)
     private String username;
 

@@ -63,10 +63,10 @@ public class ScheduleController {
         service.deleteByCourse(callers.current(), courseId);
     }
 
-    // ---------- plain CRUD: class sessions (writes are admin only) ----------
+    // ---------- class-session slots: reference data for every role; writes are admin only ----------
 
     @GetMapping("/sessions")
-    public List<SessionView> listSessions() { return service.listSessions(callers.current()); }
+    public List<SessionView> listSessions() { return service.listSessions(); }
 
     @GetMapping("/sessions/{id}")
     public SessionView getSession(@PathVariable Long id) { return service.getSession(id); }
@@ -86,7 +86,7 @@ public class ScheduleController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteSession(@PathVariable Long id) { service.deleteSession(callers.current(), id); }
 
-    // ---------- plain CRUD: terms (writes are admin only) ----------
+    // ---------- terms: every other service reads them here; writes are admin only ----------
 
     @GetMapping("/terms")
     public List<Term> listTerms() { return service.listTerms(); }

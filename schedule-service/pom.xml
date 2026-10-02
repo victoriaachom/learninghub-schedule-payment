@@ -45,6 +45,16 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Flyway: versioned schema (db/migration) and dev seed data (db/seed) -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
         <!-- Eureka client: registers with discovery-service so the gateway
              can route lb://<spring.application.name> to this service. -->
         <dependency>

@@ -1,15 +1,19 @@
 package edu.lms.service;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 
 @Component
@@ -36,8 +40,25 @@ public class EnrollmentClient {
                     .body(MyClasses.class);
             return response == null || response.classes() == null ? List.of() : response.classes();
         } catch (RestClientException e) {
-            log.warn("enrollment-service unavailable, using single tuition line: {}", e.getMessage());
+            log.warn("enrollment-service unavailable, cannot read enrolments: {}", e.getMessage());
             return List.of();
+        }
+    }
+
+    public Map<String, EnrolledClass> courses() {
+        try {
+            List<EnrolledClass> list = rest.get()
+                    .uri("/api/enrollment/courses")
+                    .header("X-User", "payment-service")
+                    .header("X-Role", "admin")
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<EnrolledClass>>() {});
+            Map<String, EnrolledClass> byId = new HashMap<>();
+            if (list != null) list.forEach(c -> byId.put(c.id(), c));
+            return byId;
+        } catch (RestClientException e) {
+            log.warn("enrollment-service unavailable, invoice lines without grade level: {}", e.getMessage());
+            return Map.of();
         }
     }
 
@@ -45,5 +66,5 @@ public class EnrollmentClient {
     public record MyClasses(List<EnrolledClass> classes) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record EnrolledClass(String id, String name, String gradeLevel, Integer credits) {}
+    public record EnrolledClass(String id, @JsonAlias("subject") String name, String gradeLevel, Integer credits) {}
 }

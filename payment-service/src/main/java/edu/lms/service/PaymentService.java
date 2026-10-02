@@ -26,16 +26,19 @@ public class PaymentService {
     private final PaymentMethodRepository methods;
     private final BillingProfileRepository billing;
     private final EnrollmentClient enrollment;
+    private final ScheduleClient schedule;
 
     public PaymentService(InvoiceRepository invoices, PaymentMethodRepository methods,
-                          BillingProfileRepository billing, EnrollmentClient enrollment) {
+                          BillingProfileRepository billing, EnrollmentClient enrollment,
+                          ScheduleClient schedule) {
         this.invoices = invoices;
         this.methods = methods;
         this.billing = billing;
         this.enrollment = enrollment;
+        this.schedule = schedule;
     }
 
-
+    // ================= views from the API spec =================
 
     public BillingProfile billing(Caller caller) {
         return billing.findByUsername(caller.username())
@@ -72,7 +75,9 @@ public class PaymentService {
         return rows;
     }
 
+    @Transactional
     public Summary summary(Caller caller) {
+        raiseTermInvoiceIfMissing(caller);
         List<Invoice> all = visibleInvoices(caller);
         LocalDate today = LocalDate.now();
 
@@ -117,12 +122,19 @@ public class PaymentService {
         String status = displayStatus(inv, firstOpenByUser(invoices.findByUsernameOrderByDueDateAsc(inv.getUsername())));
         LocalDate issued = inv.getDueDate().minusDays(ISSUED_DAYS_BEFORE_DUE);
 
-        List<BreakdownLine> lines = enrollment.enrolledClasses(inv.getUsername()).stream()
-                .map(c -> new BreakdownLine(c.name(), c.gradeLevel(), c.credits(), money(PRICE_PER_SUBJECT)))
+   
+        Map<String, EnrollmentClient.EnrolledClass> catalog =
+                inv.getLines().isEmpty() ? Map.of() : enrollment.courses();
+        List<BreakdownLine> lines = inv.getLines().stream()
+                .map(l -> {
+                    EnrollmentClient.EnrolledClass c = catalog.get(l.getCourseId());
+                    return new BreakdownLine(l.getCourseId(), l.getDescription(),
+                            c == null ? null : c.gradeLevel(), c == null ? null : c.credits(), money(l.getAmount()));
+                })
                 .toList();
-        BigDecimal total = PRICE_PER_SUBJECT.multiply(BigDecimal.valueOf(lines.size()));
-        if (lines.isEmpty()) {   // enrollment-service unavailable: single tuition line
-            lines = List.of(new BreakdownLine("Tuition", null, null, money(inv.getAmount())));
+        BigDecimal total = inv.getLines().stream().map(InvoiceLine::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (lines.isEmpty()) {   // an invoice without lines: one tuition line
+            lines = List.of(new BreakdownLine(null, "Tuition", null, null, money(inv.getAmount())));
             total = inv.getAmount();
         }
 
@@ -177,7 +189,7 @@ public class PaymentService {
                 fmt(inv.getPaidOn()), Invoice.PAID, card == null ? null : card.getId());
     }
 
-
+    // ================= plain CRUD (Phase 1 requirement) =================
 
     public List<InvoiceView> listInvoices(Caller caller) {
         return visibleInvoices(caller).stream().map(InvoiceView::of).toList();
@@ -194,6 +206,10 @@ public class PaymentService {
     @Transactional
     public InvoiceView createInvoice(Caller caller, InvoiceRequest req) {
         requireAdmin(caller);
+        if (invoices.existsByUsernameAndTermId(req.username(), req.termId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    req.username() + " already has an invoice for term " + req.termId());
+        }
         Invoice inv = new Invoice();
         apply(inv, req);
         return InvoiceView.of(invoices.save(inv));
@@ -203,6 +219,11 @@ public class PaymentService {
     public InvoiceView updateInvoice(Caller caller, Long id, InvoiceRequest req) {
         requireAdmin(caller);
         Invoice inv = invoices.findById(id).orElseThrow(() -> notFound("Unknown invoice " + id));
+        boolean keyChanged = !inv.getUsername().equals(req.username()) || !inv.getTermId().equals(req.termId());
+        if (keyChanged && invoices.existsByUsernameAndTermId(req.username(), req.termId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    req.username() + " already has an invoice for term " + req.termId());
+        }
         apply(inv, req);
         return InvoiceView.of(invoices.save(inv));
     }
@@ -257,6 +278,36 @@ public class PaymentService {
         billing.delete(billing(caller));
     }
 
+    // ================= term invoice raising =================
+
+    /**
+     * A student who has no invoice for the current term gets one, built from their
+     * enrolments: one $320 line per course. Does nothing for teachers and admins, or
+     * if schedule-service or enrollment-service cannot be reached.
+     */
+    private void raiseTermInvoiceIfMissing(Caller caller) {
+        if (!"student".equals(caller.role())) return;
+        LocalDate today = LocalDate.now();
+        Optional<ScheduleClient.TermRef> term = schedule.currentTerm(today);
+        if (term.isEmpty() || invoices.existsByUsernameAndTermId(caller.username(), term.get().id())) return;
+
+        List<EnrollmentClient.EnrolledClass> classes = enrollment.enrolledClasses(caller.username());
+        if (classes.isEmpty()) return;
+
+        ScheduleClient.TermRef t = term.get();
+        Invoice inv = new Invoice();
+        inv.setUsername(caller.username());
+        inv.setTermId(t.id());
+        inv.setDescription(t.name() + " Tuition");
+        inv.setAmount(PRICE_PER_SUBJECT.multiply(BigDecimal.valueOf(classes.size())));
+        LocalDate due = t.startDate() == null ? today.plusDays(30) : t.startDate().plusDays(30);
+        inv.setDueDate(due.isBefore(today.plusDays(7)) ? today.plusDays(14) : due);
+        inv.replaceLines(classes.stream()
+                .map(c -> new InvoiceLine(c.id(), c.name() == null ? c.id() : c.name(), PRICE_PER_SUBJECT))
+                .toList());
+        invoices.save(inv);
+    }
+
     // ================= helpers =================
 
     private List<Invoice> visibleInvoices(Caller caller) {
@@ -284,8 +335,17 @@ public class PaymentService {
 
     private void apply(Invoice inv, InvoiceRequest req) {
         inv.setUsername(req.username());
+        inv.setTermId(req.termId());
         inv.setDescription(req.description());
-        inv.setAmount(req.amount());
+        if (req.lines() != null) {
+            inv.replaceLines(req.lines().stream()
+                    .map(l -> new InvoiceLine(l.courseId(), l.description(), l.amount()))
+                    .toList());
+        }
+        BigDecimal amount = req.amount() != null ? req.amount()
+                : inv.getLines().stream().map(InvoiceLine::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (amount.signum() <= 0) throw badRequest("amount (or lines) required");
+        inv.setAmount(amount);
         inv.setDueDate(req.dueDate());
         boolean paid = Invoice.PAID.equalsIgnoreCase(req.status());
         inv.setStatus(paid ? Invoice.PAID : Invoice.UNPAID);

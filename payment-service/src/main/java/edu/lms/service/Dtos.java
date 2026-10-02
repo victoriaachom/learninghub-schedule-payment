@@ -1,6 +1,7 @@
 package edu.lms.service;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -9,12 +10,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-
+/** Request and response shapes. Field names match the team's API spec. */
 public final class Dtos {
 
     private Dtos() {}
 
- 
+  
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record HistoryRow(Long id, String date, String description, String amount,
@@ -29,7 +30,7 @@ public final class Dtos {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Summary(List<Stat> stats, String scope) {}
 
-    public record BreakdownLine(String subject, String gradeLevel, Integer credits, String amount) {}
+    public record BreakdownLine(String courseId, String subject, String gradeLevel, Integer credits, String amount) {}
 
     public record TimelineStep(String label, String date, boolean done) {}
 
@@ -46,20 +47,32 @@ public final class Dtos {
 
     // ---------- plain CRUD ----------
 
+    public record LineRequest(@NotBlank String courseId, @NotBlank String description,
+                              @NotNull @Positive BigDecimal amount) {}
+
+    /** amount may be omitted when lines are given; it is then the sum of the lines. */
     public record InvoiceRequest(@NotBlank String username,
+                                 @NotBlank String termId,
                                  @NotBlank String description,
-                                 @NotNull @Positive BigDecimal amount,
+                                 @Positive BigDecimal amount,
                                  @NotNull LocalDate dueDate,
                                  String status,
                                  LocalDate paidOn,
-                                 Long methodId) {}
+                                 Long methodId,
+                                 List<@Valid LineRequest> lines) {}
 
-    public record InvoiceView(Long id, String username, String description, BigDecimal amount,
-                              LocalDate dueDate, String status, LocalDate paidOn, Long methodId) {
+    public record LineView(Long id, String courseId, String description, BigDecimal amount) {}
+
+    public record InvoiceView(Long id, String username, String termId, String description, BigDecimal amount,
+                              LocalDate dueDate, String status, LocalDate paidOn, Long methodId,
+                              List<LineView> lines) {
         static InvoiceView of(Invoice i) {
-            return new InvoiceView(i.getId(), i.getUsername(), i.getDescription(), i.getAmount(),
+            return new InvoiceView(i.getId(), i.getUsername(), i.getTermId(), i.getDescription(), i.getAmount(),
                     i.getDueDate(), i.getStatus(), i.getPaidOn(),
-                    i.getMethod() == null ? null : i.getMethod().getId());
+                    i.getMethod() == null ? null : i.getMethod().getId(),
+                    i.getLines().stream()
+                            .map(l -> new LineView(l.getId(), l.getCourseId(), l.getDescription(), l.getAmount()))
+                            .toList());
         }
     }
 }

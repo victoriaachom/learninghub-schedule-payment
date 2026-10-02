@@ -1,0 +1,1785 @@
+{
+  "info": {
+    "name": "AchomVictoria_Phase1 - schedule-service & payment-service",
+    "description": "LearningHub Phase 1 tests: schedule-service (8103), payment-service (8107), config-service (8888) and the enrollment dev stub (8104).\n\nCaller identity in Phase 1 comes from the X-User / X-Role headers; requests without them act as the student 'sstudent'.\n\nRun against a FRESH dev database (docker compose down -v, then docker compose up --build) so the seed ids and unpaid invoices match. Set 'profile' to prod and run folder 0 to check the prod profile (folders 1-6 need dev seed data).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Sets {{wednesday}} and {{sunday}} to this week's dates (yyyy-mm-dd), so the",
+          "// schedule tests always hit a class day and a no-class day.",
+          "const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);",
+          "const now = new Date();",
+          "const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));",
+          "const wed = new Date(monday); wed.setDate(monday.getDate() + 2);",
+          "const sun = new Date(monday); sun.setDate(monday.getDate() + 6);",
+          "pm.collectionVariables.set(\"wednesday\", iso(wed));",
+          "pm.collectionVariables.set(\"sunday\", iso(sun));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "schedule",
+      "value": "http://localhost:8103"
+    },
+    {
+      "key": "payment",
+      "value": "http://localhost:8107"
+    },
+    {
+      "key": "config",
+      "value": "http://localhost:8889"
+    },
+    {
+      "key": "enrollment",
+      "value": "http://localhost:8104"
+    },
+    {
+      "key": "profile",
+      "value": "dev"
+    },
+    {
+      "key": "wednesday",
+      "value": ""
+    },
+    {
+      "key": "sunday",
+      "value": ""
+    },
+    {
+      "key": "invoiceId",
+      "value": ""
+    },
+    {
+      "key": "raisedInvoiceId",
+      "value": ""
+    },
+    {
+      "key": "cardId",
+      "value": ""
+    },
+    {
+      "key": "sessionId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0 · Health, config server, profiles, neighbours",
+      "item": [
+        {
+          "name": "Config server serves payment-service config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{config}}/payment-service/{{profile}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"has property sources\", () => pm.expect(pm.response.json().propertySources.length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Config server serves schedule-service config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{config}}/schedule-service/{{profile}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"has property sources\", () => pm.expect(pm.response.json().propertySources.length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "schedule-service health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "payment-service health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "schedule-service active profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/whoami"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"profile comes from config-service\", () => pm.expect(pm.response.text()).to.include(\"config-service\"));",
+                  "pm.test(\"matches {{profile}}\", () => pm.expect(pm.response.text().toLowerCase()).to.include(pm.collectionVariables.get(\"profile\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "payment-service active profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/whoami"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"profile comes from config-service\", () => pm.expect(pm.response.text()).to.include(\"config-service\"));",
+                  "pm.test(\"matches {{profile}}\", () => pm.expect(pm.response.text().toLowerCase()).to.include(pm.collectionVariables.get(\"profile\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Flyway migrations applied (schedule)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/actuator/flyway"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"V1 schema applied\", () => { const m = Object.values(pm.response.json().contexts).flatMap(ctx => Object.values(ctx.flywayBeans || {})).flatMap(b => b.migrations); pm.expect(m.some(x => x.version === \"1\" && x.state === \"SUCCESS\")).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enrollment neighbour reachable (dev stub)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{enrollment}}/api/enrollment/courses"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"course catalogue\", () => pm.expect(pm.response.json().length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 · Payment views (student sstudent)",
+      "item": [
+        {
+          "name": "Summary (student)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/summary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const stats = pm.response.json().stats;",
+                  "pm.test(\"4 stat cards\", () => pm.expect(stats).to.have.lengthOf(4));",
+                  "pm.test(\"student labels\", () => pm.expect(stats.map(s => s.label)).to.eql([\"Total Paid\",\"Upcoming Payment\",\"Pending\",\"Amount Due\"]));",
+                  "pm.test(\"money formatted\", () => pm.expect(stats[0].value).to.match(/^\\$[\\d,]+\\.\\d{2}$/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upcoming invoices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/upcoming"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test(\"is a list\", () => pm.expect(rows).to.be.an(\"array\"));",
+                  "if (rows.length) pm.test(\"first row is Pay Now\", () => pm.expect(rows[0].action).to.eql(\"Pay Now\"));",
+                  "pm.test(\"sorted by due date\", () => { const d = rows.map(r => new Date(r.dueDate)); for (let i = 1; i < d.length; i++) pm.expect(d[i] >= d[i-1]).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "History (paid invoices)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/history"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test(\"all Paid\", () => rows.forEach(r => pm.expect(r.status).to.eql(\"Paid\")));",
+                  "pm.test(\"no username for a student\", () => rows.forEach(r => pm.expect(r).to.not.have.property(\"username\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My cards",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/methods"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const cards = pm.response.json();",
+                  "pm.test(\"exactly one default card\", () => pm.expect(cards.filter(c => c.isDefault)).to.have.lengthOf(1));",
+                  "pm.test(\"only last 4 digits stored\", () => cards.forEach(c => pm.expect(c.last4).to.match(/^\\d{4}$/)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Billing profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/billing"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"has name\", () => pm.expect(pm.response.json().name).to.be.a(\"string\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invoice details (own Q1, paid)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/invoices/1/details"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const inv = pm.response.json();",
+                  "pm.test(\"status Paid with receipt\", () => { pm.expect(inv.status).to.eql(\"Paid\"); pm.expect(inv.receiptNumber).to.match(/^RCPT-/); });",
+                  "pm.test(\"one $320 line per course\", () => { pm.expect(inv.breakdown).to.have.lengthOf(5); inv.breakdown.forEach(l => pm.expect(l.amount).to.eql(\"$320.00\")); });",
+                  "pm.test(\"grade level from enrollment\", () => pm.expect(inv.breakdown[0].gradeLevel).to.eql(\"Junior\"));",
+                  "pm.test(\"lines add up\", () => pm.expect(inv.breakdownTotal).to.eql(inv.amount));",
+                  "pm.test(\"3-step timeline\", () => pm.expect(inv.timeline).to.have.lengthOf(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pay next unpaid invoice",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/pay",
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test(\"marked Paid\", () => pm.expect(r.status).to.eql(\"Paid\"));",
+                  "pm.test(\"default card used\", () => pm.expect(r.methodId).to.not.be.null);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 · Term invoice raised from enrolments (new student alee)",
+      "item": [
+        {
+          "name": "Summary raises this term's invoice",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "alee"
+              },
+              {
+                "key": "X-Role",
+                "value": "student"
+              }
+            ],
+            "url": "{{payment}}/api/payments/summary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json().stats;",
+                  "pm.test(\"an upcoming payment now exists\", () => pm.expect(s[1].value).to.not.eql(\"$0.00\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upcoming shows the new invoice",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "alee"
+              },
+              {
+                "key": "X-Role",
+                "value": "student"
+              }
+            ],
+            "url": "{{payment}}/api/payments/upcoming"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test(\"exactly one invoice\", () => pm.expect(rows).to.have.lengthOf(1));",
+                  "pm.test(\"tuition for the current term\", () => pm.expect(rows[0].description).to.include(\"Tuition\"));",
+                  "pm.collectionVariables.set(\"raisedInvoiceId\", rows[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Its details list one line per enrolled course",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "alee"
+              },
+              {
+                "key": "X-Role",
+                "value": "student"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices/{{raisedInvoiceId}}/details"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const inv = pm.response.json();",
+                  "pm.test(\"5 courses x $320 = $1,600.00\", () => { pm.expect(inv.breakdown).to.have.lengthOf(5); pm.expect(inv.amount).to.eql(\"$1,600.00\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Opening the summary again does not raise a second invoice",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "alee"
+              },
+              {
+                "key": "X-Role",
+                "value": "student"
+              }
+            ],
+            "url": "{{payment}}/api/payments/upcoming"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"still one invoice\", () => pm.expect(pm.response.json()).to.have.lengthOf(1));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({url: pm.collectionVariables.get(\"payment\") + \"/api/payments/summary\", header: {\"X-User\": \"alee\", \"X-Role\": \"student\"}}, () => {});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 · Payment admin view and error cases",
+      "item": [
+        {
+          "name": "Summary (admin, school-wide)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{payment}}/api/payments/summary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"scope school\", () => pm.expect(s.scope).to.eql(\"school\"));",
+                  "pm.test(\"admin labels\", () => pm.expect(s.stats.map(x => x.label)).to.eql([\"Total Collected\",\"Outstanding\",\"Overdue\",\"Students Billed\"]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upcoming (admin rows carry username)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{payment}}/api/payments/upcoming"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"rows have username\", () => pm.response.json().forEach(r => pm.expect(r.username).to.be.a(\"string\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Teacher has no billing",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "ppatel"
+              },
+              {
+                "key": "X-Role",
+                "value": "teacher"
+              }
+            ],
+            "url": "{{payment}}/api/payments/upcoming"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"nothing for a teacher\", () => pm.expect(pm.response.json()).to.have.lengthOf(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - someone else's invoice",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/invoices/6/details"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - unknown invoice",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment}}/api/payments/invoices/99999/details"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - card with invalid last4",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/methods",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Visa\",\n  \"last4\": \"42\",\n  \"expires\": \"08/2028\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - student cannot create invoices",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"sstudent\",\n  \"termId\": \"q4-2027\",\n  \"description\": \"Hack\",\n  \"amount\": 1,\n  \"dueDate\": \"2027-01-01\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 · Payment CRUD",
+      "item": [
+        {
+          "name": "Create invoice with lines (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"jsmith\",\n  \"termId\": \"summer-2027\",\n  \"description\": \"Summer 2027 Tuition\",\n  \"dueDate\": \"2027-06-01\",\n  \"lines\": [\n    {\n      \"courseId\": \"ap-cs-a\",\n      \"description\": \"AP Computer Science A\",\n      \"amount\": 320.0\n    },\n    {\n      \"courseId\": \"ap-english-lit\",\n      \"description\": \"AP English Literature\",\n      \"amount\": 320.0\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const inv = pm.response.json();",
+                  "pm.collectionVariables.set(\"invoiceId\", inv.id);",
+                  "pm.test(\"amount = sum of lines\", () => pm.expect(inv.amount).to.eql(640));",
+                  "pm.test(\"2 lines\", () => pm.expect(inv.lines).to.have.lengthOf(2));",
+                  "pm.test(\"saved as Unpaid\", () => pm.expect(inv.status).to.eql(\"Unpaid\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - one invoice per student per term",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"jsmith\",\n  \"termId\": \"summer-2027\",\n  \"description\": \"Duplicate\",\n  \"amount\": 1,\n  \"dueDate\": \"2027-06-01\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read invoice",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices/{{invoiceId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"right invoice\", () => pm.expect(pm.response.json().termId).to.eql(\"summer-2027\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List invoices (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"includes new invoice\", () => pm.expect(pm.response.json().map(i => i.id)).to.include(Number(pm.collectionVariables.get(\"invoiceId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update invoice",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices/{{invoiceId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"jsmith\",\n  \"termId\": \"summer-2027\",\n  \"description\": \"Summer 2027 Tuition (discounted)\",\n  \"amount\": 600.0,\n  \"dueDate\": \"2027-06-01\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"amount updated\", () => pm.expect(pm.response.json().amount).to.eql(600));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete invoice",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices/{{invoiceId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deleted invoice is gone (404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{payment}}/api/payments/invoices/{{invoiceId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add card",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/methods",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Discover\",\n  \"last4\": \"6011\",\n  \"expires\": \"12/2029\",\n  \"isDefault\": false\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"cardId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update card",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/methods/{{cardId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Discover\",\n  \"last4\": \"6011\",\n  \"expires\": \"01/2030\",\n  \"isDefault\": false\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"expiry updated\", () => pm.expect(pm.response.json().expires).to.eql(\"01/2030\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete card",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{payment}}/api/payments/methods/{{cardId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update billing profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment}}/api/payments/billing",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sam Student\",\n  \"email\": \"sam.student@learninghub.edu\",\n  \"address\": \"1401 E University Blvd, Tucson, AZ 85721\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"address updated\", () => pm.expect(pm.response.json().address).to.include(\"Tucson\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 · Schedule views",
+      "item": [
+        {
+          "name": "Today (this week's Wednesday)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/today?date={{wednesday}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test(\"has classes\", () => pm.expect(rows.length).to.be.above(0));",
+                  "pm.test(\"course names come from enrollment\", () => pm.expect(rows.map(r => r.subject)).to.include(\"AP Chemistry\"));",
+                  "pm.test(\"only enrolled courses (student)\", () => pm.expect(rows.map(r => r.courseId)).to.not.include(\"ap-calc-bc\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Today (teacher janderson sees only his classes)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "janderson"
+              },
+              {
+                "key": "X-Role",
+                "value": "teacher"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/today?date={{wednesday}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"only janderson\", () => pm.response.json().forEach(r => pm.expect(r.teacherUsername).to.eql(\"janderson\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Today (a Sunday is empty)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/today?date={{sunday}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"no classes on Sunday\", () => pm.expect(pm.response.json()).to.have.lengthOf(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Week",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/week"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const w = pm.response.json();",
+                  "pm.test(\"7 days Mon-Sun\", () => { pm.expect(w.days).to.have.lengthOf(7); pm.expect(w.days[0].name).to.eql(\"Mon\"); });",
+                  "pm.test(\"has blocks\", () => pm.expect(w.blocks.length).to.be.above(0));",
+                  "pm.test(\"at most 4 upcoming\", () => pm.expect(w.upcoming.length).to.be.at.most(4));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Term overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/term"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json();",
+                  "pm.test(\"term named\", () => pm.expect(t.term.name).to.be.a(\"string\"));",
+                  "pm.test(\"bars within 0-100%\", () => t.bars.forEach(b => { pm.expect(b.startPct).to.be.within(0,100); pm.expect(b.endPct).to.be.within(0,100); }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Month (current)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/month"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const m = pm.response.json();",
+                  "pm.test(\"valid month\", () => { pm.expect(m.days).to.be.within(28,31); pm.expect(m.firstDow).to.be.within(0,6); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - month=13",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/month?month=13"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Slots: reference data for every role",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/sessions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test(\"student sees every slot\", () => pm.expect(rows.length).to.be.at.least(6));",
+                  "pm.test(\"slot only: no course names stored here\", () => rows.forEach(r => pm.expect(r).to.not.have.property(\"subject\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Terms (read by every other service)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/terms"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"exactly one current term\", () => pm.expect(pm.response.json().filter(t => t.isCurrent)).to.have.lengthOf(1));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 · Schedule slot sync and CRUD",
+      "item": [
+        {
+          "name": "Upsert slot by course (admin, as enrollment does)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions/by-course/ap-biology",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"days\": [\n    \"thu\",\n    \"Tue\"\n  ],\n  \"startTime\": \"14:00\",\n  \"termId\": \"q1-2026\",\n  \"subject\": \"ignored - owned by enrollment\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"endTime defaults to start + 1h\", () => pm.expect(s.endTime).to.eql(\"15:00\"));",
+                  "pm.test(\"days normalised\", () => pm.expect(s.days).to.eql([\"Tue\",\"Thu\"]));",
+                  "pm.test(\"course details not stored\", () => pm.expect(s).to.not.have.property(\"subject\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upsert again updates the same slot",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions/by-course/ap-biology",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"days\": [\n    \"Mon\"\n  ],\n  \"startTime\": \"09:00\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"moved to 09:00\", () => pm.expect(pm.response.json().startTime).to.eql(\"09:00\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - slot longer than 1 hour",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions/by-course/ap-biology",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"days\": [\n    \"Tue\"\n  ],\n  \"startTime\": \"14:00\",\n  \"endTime\": \"16:00\",\n  \"termId\": \"q1-2026\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - unknown weekday",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions/by-course/ap-biology",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"days\": [\n    \"Funday\"\n  ],\n  \"startTime\": \"14:00\",\n  \"termId\": \"q1-2026\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - student cannot delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/sessions/by-course/ap-biology"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete slot by course (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions/by-course/ap-biology"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - delete again",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions/by-course/ap-biology"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create slot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseId\": \"ap-art\",\n  \"days\": [\n    \"Fri\"\n  ],\n  \"startTime\": \"09:00\",\n  \"termId\": \"q1-2026\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"sessionId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - one slot per course",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseId\": \"ap-art\",\n  \"days\": [\n    \"Mon\"\n  ],\n  \"startTime\": \"10:00\",\n  \"termId\": \"q1-2026\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read slot",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/sessions/{{sessionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"right slot\", () => pm.expect(pm.response.json().courseId).to.eql(\"ap-art\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update slot",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions/{{sessionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"days\": [\n    \"Fri\"\n  ],\n  \"startTime\": \"10:00\",\n  \"termId\": \"q1-2026\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"moved to 10:00\", () => pm.expect(pm.response.json().startTime).to.eql(\"10:00\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete slot",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/sessions/{{sessionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create term",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/terms",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"summer-2027\",\n  \"name\": \"Summer 2027\",\n  \"startDate\": \"2027-06-07\",\n  \"endDate\": \"2027-07-30\",\n  \"isCurrent\": false,\n  \"maxCredits\": 12,\n  \"quarter\": 5,\n  \"academicYear\": \"2026-2027\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update term",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/terms/summer-2027",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"summer-2027\",\n  \"name\": \"Summer 2027\",\n  \"startDate\": \"2027-06-07\",\n  \"endDate\": \"2027-07-30\",\n  \"isCurrent\": false,\n  \"maxCredits\": 15,\n  \"quarter\": 5,\n  \"academicYear\": \"2026-2027\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"credits updated\", () => pm.expect(pm.response.json().maxCredits).to.eql(15));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete term",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin"
+              },
+              {
+                "key": "X-Role",
+                "value": "admin"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/terms/summer-2027"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - deleted term",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule}}/api/schedule/terms/summer-2027"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -5,7 +5,7 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
-
+/** One billing profile per user. username is the shared Keycloak id, not a foreign key. */
 @Entity
 @Table(name = "billing_profile")
 public class BillingProfile {

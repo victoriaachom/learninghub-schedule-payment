@@ -1,0 +1,9 @@
+{
+  "classes": [
+    {"id": "ap-chemistry",   "name": "AP Chemistry",          "gradeLevel": "Junior", "credits": 4},
+    {"id": "ap-physics-2",   "name": "AP Physics 2",          "gradeLevel": "Junior", "credits": 4},
+    {"id": "ap-precalc",     "name": "AP Pre Calculus",       "gradeLevel": "Junior", "credits": 3},
+    {"id": "ap-english-lit", "name": "AP English Literature", "gradeLevel": "Junior", "credits": 3},
+    {"id": "ap-cs-a",        "name": "AP Computer Science A", "gradeLevel": "Junior", "credits": 3}
+  ]
+}

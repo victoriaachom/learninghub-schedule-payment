@@ -1,33 +1,39 @@
+# schedule-service: settings shared by every profile.
+# Profile-specific settings (dev / prod) come from config-service:
+#   config-service/src/main/resources/config/schedule-service-{dev,prod}.yml
 spring:
   application:
-    name: schedule-service           # gateway routes lb://schedule-service here
+    name: schedule-service          # gateway routes lb://schedule-service here
   config:
-    # 'optional:' = still boots if config-service isn't running yet
-    import: optional:configserver:http://config-service:8888
+    import: optional:configserver:${CONFIG_URL:http://config-service:8888}
   datasource:
     url: ${DB_URL:jdbc:postgresql://postgres:5432/scheduledb}
     username: ${DB_USER:lms}
     password: ${DB_PASSWORD:lms}
   jpa:
     open-in-view: false
+    hibernate:
+      ddl-auto: validate            # Flyway owns the schema; Hibernate only checks it matches
+  flyway:
+    locations: classpath:db/migration   # dev adds classpath:db/seed through config-service
 
 server:
   port: ${SERVER_PORT:8103}
   error:
-    include-message: always         # show the reason (e.g. "Not the owner of invoice 3") in error responses
+    include-message: always         # show the reason (e.g. "Admin only") in error responses
 
 lms:
   enrollment-url: ${ENROLLMENT_URL:http://enrollment-service:8104}
-  dev-user: ${LMS_DEV_USER:sstudent}   # used when a request has no X-User header
+  dev-user: ${LMS_DEV_USER:sstudent}   # used when a request has no X-User header (Phase 1)
   dev-role: ${LMS_DEV_ROLE:student}
-  zone: ${LMS_ZONE:America/Phoenix}      # "today" is computed in this time zone
+  zone: ${LMS_ZONE:America/Phoenix}    # "today" is computed in this time zone
+  environment-label: "NO PROFILE CONFIG - config-service was not reachable at startup"
 
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://discovery-service:8761/eureka}
-    # off by default so the service runs alone; compose turns it on
-    enabled: ${EUREKA_ENABLED:false}
+    enabled: ${EUREKA_ENABLED:false}    # Phase 2
   instance:
     prefer-ip-address: true
 
@@ -35,55 +41,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,env
-
----
-# ---------- DEV ----------
-spring:
-  config:
-    activate:
-      on-profile: dev
-  jpa:
-    # data.sql must run AFTER Hibernate creates the schema, not before
-    defer-datasource-initialization: true
-    hibernate:
-      # 'create' rebuilds the tables on every dev start, so the seed data
-      # loads cleanly each time instead of piling up duplicate rows
-      ddl-auto: create
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-  sql:
-    init:
-      mode: always
-      encoding: UTF-8
-
-lms:
-  environment-label: DEV - schema auto-created, SQL logging on, seed data loaded
-
-logging:
-  level:
-    edu.lms: DEBUG
-
----
-# ---------- PROD ----------
-spring:
-  config:
-    activate:
-      on-profile: prod
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    show-sql: false
-  sql:
-    init:
-      mode: never
-
-lms:
-  environment-label: PROD - schema validated only, SQL logging off, no seed data
-
-logging:
-  level:
-    root: WARN
-    edu.lms: INFO
+        include: health,info,env,flyway

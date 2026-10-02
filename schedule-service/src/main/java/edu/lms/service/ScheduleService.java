@@ -1,5 +1,6 @@
 package edu.lms.service;
 
+import edu.lms.service.EnrollmentClient.Course;
 import edu.lms.service.ScheduleDtos.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -42,6 +43,18 @@ public class ScheduleService {
         this.zone = ZoneId.of(zone);
     }
 
+    /** A slot together with its course details from enrollment (course may be null if unavailable). */
+    private record Slot(ClassSession s, Course c) {
+        String subject() { return c != null && c.name() != null ? c.name() : s.getCourseId(); }
+        String gradeLevel() { return c == null ? null : c.gradeLevel(); }
+        String color() { return c != null && c.color() != null ? c.color() : "blue"; }
+        String teacherUsername() { return c == null ? null : c.teacherUsername(); }
+        String teacher() {
+            if (c == null) return null;
+            return c.teacher() != null ? c.teacher() : c.teacherUsername();
+        }
+    }
+
     // ================= timetable views from the API spec =================
 
     public MonthView month(Caller caller, Integer year, Integer month) {
@@ -52,14 +65,14 @@ public class ScheduleService {
         } catch (DateTimeException e) {
             throw badRequest("month must be 1-12");
         }
-        List<ClassSession> mine = visible(caller);
+        List<Slot> mine = visible(caller);
         List<MonthClass> classes = new ArrayList<>();
         for (int day = 1; day <= ym.lengthOfMonth(); day++) {
             LocalDate d = ym.atDay(day);
-            for (ClassSession s : mine) {
-                if (meets(s, d)) {
-                    classes.add(new MonthClass(day, s.getSubject(), s.getColor(),
-                            time(s.getStartTime()), time(s.getEndTime()), s.getGradeLevel()));
+            for (Slot x : mine) {
+                if (meets(x.s(), d)) {
+                    classes.add(new MonthClass(day, x.s().getCourseId(), x.subject(), x.color(),
+                            time(x.s().getStartTime()), time(x.s().getEndTime()), x.gradeLevel()));
                 }
             }
         }
@@ -80,12 +93,11 @@ public class ScheduleService {
         }
 
         List<TermBar> bars = visible(caller).stream()
-                .filter(s -> s.getTerm().getId().equals(t.getId()))
-                .sorted(Comparator.comparing(ClassSession::getStartTime))
-                .map(s -> {
-                    LocalDate from = max(s.effectiveStart(), t.getStartDate());
-                    LocalDate to = min(s.effectiveEnd(), t.getEndDate());
-                    return new TermBar(s.getSubject(), s.getColor(), range(from, to),
+                .filter(x -> x.s().getTerm().getId().equals(t.getId()))
+                .map(x -> {
+                    LocalDate from = max(x.s().effectiveStart(), t.getStartDate());
+                    LocalDate to = min(x.s().effectiveEnd(), t.getEndDate());
+                    return new TermBar(x.s().getCourseId(), x.subject(), x.color(), range(from, to),
                             pct(t.getStartDate(), from, span), pct(t.getStartDate(), to, span));
                 })
                 .toList();
@@ -96,10 +108,10 @@ public class ScheduleService {
     public List<TodayClass> today(Caller caller, LocalDate date) {
         LocalDate d = date != null ? date : today();
         return visible(caller).stream()
-                .filter(s -> meets(s, d))
-                .map(s -> new TodayClass(time(s.getStartTime()), time(s.getEndTime()), s.getSubject(),
-                        s.getGradeLevel(), s.getGradeLevel(), s.getColor(), s.getTeacher(),
-                        s.getTeacherUsername(), s.getCourseId()))
+                .filter(x -> meets(x.s(), d))
+                .map(x -> new TodayClass(time(x.s().getStartTime()), time(x.s().getEndTime()), x.subject(),
+                        x.gradeLevel(), x.gradeLevel(), x.color(), x.teacher(), x.teacherUsername(),
+                        x.s().getCourseId()))
                 .toList();
     }
 
@@ -108,24 +120,25 @@ public class ScheduleService {
         LocalDate ref = date != null ? date : today();
         LocalDate monday = ref.with(DayOfWeek.MONDAY);
         LocalDate sunday = monday.plusDays(6);
-        List<ClassSession> mine = visible(caller);
+        List<Slot> mine = visible(caller);
 
         List<WeekDay> days = new ArrayList<>();
         for (LocalDate d = monday; !d.isAfter(sunday); d = d.plusDays(1)) {
             days.add(new WeekDay(dow(d), d.format(SHORT)));
         }
 
-        List<ClassSession> thisWeek = mine.stream()
-                .filter(s -> monday.datesUntil(sunday.plusDays(1)).anyMatch(d -> meets(s, d)))
+        List<Slot> thisWeek = mine.stream()
+                .filter(x -> monday.datesUntil(sunday.plusDays(1)).anyMatch(d -> meets(x.s(), d)))
                 .toList();
         List<WeekBlock> blocks = thisWeek.stream()
-                .map(s -> new WeekBlock(s.getSubject(), s.getGradeLevel(), s.getColor(), s.getTeacher(),
-                        s.getTeacherUsername(), List.copyOf(s.getDays()), time(s.getStartTime()), time(s.getEndTime())))
+                .map(x -> new WeekBlock(x.s().getCourseId(), x.subject(), x.gradeLevel(), x.color(), x.teacher(),
+                        x.teacherUsername(), List.copyOf(x.s().getDays()),
+                        time(x.s().getStartTime()), time(x.s().getEndTime())))
                 .toList();
 
-        int firstHour = thisWeek.stream().mapToInt(s -> s.getStartTime().getHour()).min().orElse(8);
+        int firstHour = thisWeek.stream().mapToInt(x -> x.s().getStartTime().getHour()).min().orElse(8);
         int lastHour = thisWeek.stream()
-                .mapToInt(s -> s.getEndTime().getHour() + (s.getEndTime().getMinute() > 0 ? 1 : 0))
+                .mapToInt(x -> x.s().getEndTime().getHour() + (x.s().getEndTime().getMinute() > 0 ? 1 : 0))
                 .max().orElse(16);
         List<String> hours = new ArrayList<>();
         for (int h = firstHour; h <= lastHour; h++) hours.add(time(LocalTime.of(h, 0)));
@@ -134,7 +147,7 @@ public class ScheduleService {
         List<Integer> dotDays = new ArrayList<>();
         for (int day = 1; day <= ym.lengthOfMonth(); day++) {
             LocalDate d = ym.atDay(day);
-            if (mine.stream().anyMatch(s -> meets(s, d))) dotDays.add(day);
+            if (mine.stream().anyMatch(x -> meets(x.s(), d))) dotDays.add(day);
         }
 
         Term t = findTerm(ref).orElse(null);
@@ -143,7 +156,16 @@ public class ScheduleService {
                 upcoming(mine, ref, 4));
     }
 
-    // ================= session sync used by enrollment-service =================
+    // ================= slots (reference data) and the admin sync used by enrollment =================
+
+    /** Every slot, for every role: enrollment-service reads this to add times to its catalogue. */
+    public List<SessionView> listSessions() {
+        return sessions.findAllByOrderByStartTimeAsc().stream().map(SessionView::of).toList();
+    }
+
+    public SessionView getSession(Long id) {
+        return SessionView.of(sessions.findById(id).orElseThrow(() -> notFound("Unknown session " + id)));
+    }
 
     @Transactional
     public SessionView upsertByCourse(Caller caller, String courseId, SessionRequest req) {
@@ -161,20 +183,13 @@ public class ScheduleService {
         sessions.deleteAll(found);
     }
 
-    // ================= plain CRUD: sessions =================
-
-    public List<SessionView> listSessions(Caller caller) {
-        return visible(caller).stream().map(SessionView::of).toList();
-    }
-
-    public SessionView getSession(Long id) {
-        return SessionView.of(sessions.findById(id).orElseThrow(() -> notFound("Unknown session " + id)));
-    }
-
     @Transactional
     public SessionView createSession(Caller caller, SessionRequest req) {
         requireAdmin(caller);
         if (req.courseId() == null || req.courseId().isBlank()) throw badRequest("courseId is required");
+        if (sessions.findFirstByCourseId(req.courseId()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Course " + req.courseId() + " already has a slot");
+        }
         ClassSession s = new ClassSession();
         apply(s, req.courseId(), req);
         return SessionView.of(sessions.save(s));
@@ -184,7 +199,7 @@ public class ScheduleService {
     public SessionView updateSession(Caller caller, Long id, SessionRequest req) {
         requireAdmin(caller);
         ClassSession s = sessions.findById(id).orElseThrow(() -> notFound("Unknown session " + id));
-        apply(s, req.courseId() == null || req.courseId().isBlank() ? s.getCourseId() : req.courseId(), req);
+        apply(s, s.getCourseId(), req);   // a slot keeps its course; move a course with PUT /by-course
         return SessionView.of(sessions.save(s));
     }
 
@@ -195,7 +210,7 @@ public class ScheduleService {
         sessions.deleteById(id);
     }
 
-    // ================= plain CRUD: terms =================
+    // ================= terms (every other service reads them from here) =================
 
     public List<Term> listTerms() { return terms.findAllByOrderByStartDateAsc(); }
 
@@ -229,21 +244,26 @@ public class ScheduleService {
     @Transactional
     public void deleteTerm(Caller caller, String id) {
         requireAdmin(caller);
-        terms.delete(getTerm(id));   // the database cascades to its sessions
+        terms.delete(getTerm(id));   // the database cascades to its slots
     }
 
     // ================= helpers =================
 
     private LocalDate today() { return LocalDate.now(zone); }
 
-    private List<ClassSession> visible(Caller caller) {
-        List<ClassSession> all = sessions.findAllByOrderByStartTimeAsc();
+    /** The caller's slots, each paired with its course details from enrollment. */
+    private List<Slot> visible(Caller caller) {
+        Map<String, Course> catalog = enrollment.courses();
+        List<Slot> all = sessions.findAllByOrderByStartTimeAsc().stream()
+                .map(s -> new Slot(s, catalog.get(s.getCourseId())))
+                .toList();
         if (caller.isAdmin()) return all;
         if ("teacher".equals(caller.role())) {
-            return all.stream().filter(s -> caller.username().equals(s.getTeacherUsername())).toList();
+            if (catalog.isEmpty()) return all;   // enrollment unavailable: cannot tell who teaches what
+            return all.stream().filter(x -> caller.username().equals(x.teacherUsername())).toList();
         }
         return enrollment.enrolledCourseIds(caller.username())
-                .map(ids -> all.stream().filter(s -> ids.contains(s.getCourseId())).toList())
+                .map(ids -> all.stream().filter(x -> ids.contains(x.s().getCourseId())).toList())
                 .orElse(all);
     }
 
@@ -260,25 +280,27 @@ public class ScheduleService {
         return findTerm(day).orElseThrow(() -> notFound("No current term"));
     }
 
-    private List<UpcomingClass> upcoming(List<ClassSession> mine, LocalDate from, int limit) {
+    private List<UpcomingClass> upcoming(List<Slot> mine, LocalDate from, int limit) {
         LocalDate realToday = today();
         LocalTime now = LocalTime.now(zone);
         List<UpcomingClass> result = new ArrayList<>();
         for (LocalDate d = from; !d.isAfter(from.plusDays(60)) && result.size() < limit; d = d.plusDays(1)) {
-            for (ClassSession s : mine) {
+            for (Slot x : mine) {
                 if (result.size() == limit) break;
-                if (!meets(s, d)) continue;
-                if (d.equals(realToday) && !s.getStartTime().isAfter(now)) continue;   // already started
-                result.add(new UpcomingClass(s.getSubject(), d.format(WHEN),
-                        timeRange(s.getStartTime(), s.getEndTime()), s.getGradeLevel(), s.getTeacher(),
-                        s.getTeacherUsername(), s.getCourseId(), s.getColor()));
+                if (!meets(x.s(), d)) continue;
+                if (d.equals(realToday) && !x.s().getStartTime().isAfter(now)) continue;   // already started
+                result.add(new UpcomingClass(x.subject(), d.format(WHEN),
+                        timeRange(x.s().getStartTime(), x.s().getEndTime()), x.gradeLevel(), x.teacher(),
+                        x.teacherUsername(), x.s().getCourseId(), x.color()));
             }
         }
         return result;
     }
 
     private void apply(ClassSession s, String courseId, SessionRequest req) {
-        Term term = terms.findById(req.termId()).orElseThrow(() -> badRequest("Unknown termId " + req.termId()));
+        Term term = req.termId() == null || req.termId().isBlank()
+                ? currentTerm(today())
+                : terms.findById(req.termId()).orElseThrow(() -> badRequest("Unknown termId " + req.termId()));
 
         List<String> days = new ArrayList<>();
         for (String raw : req.days()) {
@@ -298,11 +320,6 @@ public class ScheduleService {
 
         s.setTerm(term);
         s.setCourseId(courseId);
-        s.setSubject(req.subject());
-        s.setGradeLevel(req.gradeLevel());
-        s.setTeacher(req.teacher());
-        s.setTeacherUsername(req.teacherUsername());
-        s.setColor(req.color() == null || req.color().isBlank() ? "blue" : req.color());
         s.setDays(days);
         s.setStartTime(start);
         s.setEndTime(end);

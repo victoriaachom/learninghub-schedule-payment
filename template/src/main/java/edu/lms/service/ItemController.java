@@ -7,10 +7,7 @@ import org.springframework.web.bind.annotation.*;
 import java.net.URI;
 import java.util.List;
 
-/**
- * The 3-layer stack Phase 1 asks for: entity -> repository -> service -> controller.
- * Base path must match the gateway route Sanjay assigns (see application.yml).
- */
+
 @RestController
 @RequestMapping("/api/__RESOURCE__")
 public class ItemController {

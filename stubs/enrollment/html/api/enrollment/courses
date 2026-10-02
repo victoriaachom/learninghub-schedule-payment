@@ -1,0 +1,8 @@
+[
+  {"id": "ap-chemistry",   "termId": "q1-2026", "name": "AP Chemistry",          "gradeLevel": "Junior", "teacherUsername": "ppatel",    "teacher": "Dr Priya Patel",   "credits": 4, "color": "red"},
+  {"id": "ap-physics-2",   "termId": "q1-2026", "name": "AP Physics 2",          "gradeLevel": "Junior", "teacherUsername": "dcarter",   "teacher": "Mr David Carter",  "credits": 4, "color": "purple"},
+  {"id": "ap-precalc",     "termId": "q1-2026", "name": "AP Pre Calculus",       "gradeLevel": "Junior", "teacherUsername": "janderson", "teacher": "Dr John Anderson", "credits": 3, "color": "blue"},
+  {"id": "ap-calc-bc",     "termId": "q1-2026", "name": "AP Calculus BC",        "gradeLevel": "Senior", "teacherUsername": "janderson", "teacher": "Dr John Anderson", "credits": 4, "color": "teal"},
+  {"id": "ap-english-lit", "termId": "q1-2026", "name": "AP English Literature", "gradeLevel": "Junior", "teacherUsername": "swilson",   "teacher": "Ms Sarah Wilson",  "credits": 3, "color": "green"},
+  {"id": "ap-cs-a",        "termId": "q1-2026", "name": "AP Computer Science A", "gradeLevel": "Junior", "teacherUsername": "klee",      "teacher": "Mr Kevin Lee",     "credits": 3, "color": "orange"}
+]
