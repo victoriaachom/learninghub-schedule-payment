@@ -22,7 +22,7 @@
           "// ---- Authentication (Phase 2) ----------------------------------------------",
           "// Each request names the user it acts as in an X-User header (default student1).",
           "// This script logs that user in to Keycloak through the gateway (password grant),",
-          "// caches the token, and replaces X-User / X-Role with \"Authorization: Bearer <token>\".",
+          "// keeps the token for this run only, and replaces X-User / X-Role with \"Authorization: Bearer <token>\".",
           "// The services ignore X-User; only the signed token counts.",
           "// A request with an \"X-No-Auth\" header is sent without a token (to test 401s).",
           "if (pm.request.headers.has(\"X-No-Auth\")) {",
@@ -31,8 +31,8 @@
           "    const user = pm.request.headers.get(\"X-User\") || \"student1\";",
           "    pm.request.headers.remove(\"X-User\");",
           "    pm.request.headers.remove(\"X-Role\");",
-          "    const cached = pm.collectionVariables.get(\"tok_\" + user);",
-          "    const expires = Number(pm.collectionVariables.get(\"exp_\" + user) || 0);",
+          "    const cached = pm.variables.get(\"tok_\" + user);",
+          "    const expires = Number(pm.variables.get(\"exp_\" + user) || 0);",
           "    if (cached && Date.now() < expires) {",
           "        pm.request.headers.upsert({ key: \"Authorization\", value: \"Bearer \" + cached });",
           "    } else {",
@@ -49,8 +49,8 @@
           "        }, (err, res) => {",
           "            if (err || res.code !== 200) { console.error(\"Keycloak login failed for \" + user, err || res.text()); return; }",
           "            const body = res.json();",
-          "            pm.collectionVariables.set(\"tok_\" + user, body.access_token);",
-          "            pm.collectionVariables.set(\"exp_\" + user, Date.now() + (body.expires_in - 30) * 1000);",
+          "            pm.variables.set(\"tok_\" + user, body.access_token);   // run-scoped: never saved, so a Keycloak restart cannot leave stale tokens",
+          "            pm.variables.set(\"exp_\" + user, Date.now() + (body.expires_in - 30) * 1000);",
           "            pm.request.headers.upsert({ key: \"Authorization\", value: \"Bearer \" + body.access_token });",
           "        });",
           "    }",
@@ -125,6 +125,43 @@
     {
       "name": "0 · Health, config server, profiles, neighbours",
       "item": [
+        {
+          "name": "Start of run: clear cached logins",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              }
+            ],
+            "url": "{{config}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Keycloak gets new signing keys whenever the database is wiped (docker compose down -v),",
+                  "// so tokens cached by an earlier run would be rejected. Start every run with fresh logins.",
+                  "Object.keys(pm.collectionVariables.toObject())",
+                  "    .filter(k => k.startsWith(\"tok_\") || k.startsWith(\"exp_\"))",
+                  "    .forEach(k => pm.collectionVariables.unset(k));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"no saved logins\", () => pm.expect(pm.collectionVariables.get(\"tok_student1\")).to.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "Config server serves payment-service config",
           "request": {
@@ -587,7 +624,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.sendRequest({url: pm.collectionVariables.get(\"payment\") + \"/api/payments/summary\", header: {\"Authorization\": \"Bearer \" + pm.collectionVariables.get(\"tok_alee\")}}, () => {});"
+                  "pm.sendRequest({url: pm.collectionVariables.get(\"payment\") + \"/api/payments/summary\", header: {\"Authorization\": \"Bearer \" + pm.variables.get(\"tok_alee\")}}, () => {});"
                 ]
               }
             }
