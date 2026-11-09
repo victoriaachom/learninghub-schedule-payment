@@ -25,7 +25,9 @@ public class EnrollmentClient {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(1000);
         factory.setReadTimeout(2000);
-        this.rest = RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
+        this.rest = RestClient.builder().baseUrl(baseUrl).requestFactory(factory)
+                .requestInterceptor(new BearerTokenForwarder())   // pass the caller's token on
+                .build();
     }
 
     /** Course catalogue keyed by course id; empty map if enrollment-service is unavailable. */

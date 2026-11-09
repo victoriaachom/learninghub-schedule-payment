@@ -8,6 +8,10 @@
 # and /api/payments/** to the services it finds in Eureka (discovery-service,
 # dashboard on http://localhost:8761).
 #
+# Security: Keycloak (realm "learninghub", imported from keycloak/) is reached
+# through the gateway at http://localhost:8090/auth. Password-reset emails land
+# in Mailpit: http://localhost:8025
+#
 # postgres, config-service and discovery-service must be healthy before the
 # business services start, so they receive their profile and can register.
 
@@ -40,6 +44,41 @@ services:
     networks: [lh-internal]
     restart: unless-stopped
 
+  # Identity provider: login, tokens, roles, self-registration, forgot-password.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${DB_USER}
+      KC_DB_PASSWORD: ${DB_PASSWORD}
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME: http://localhost:8090/auth      # public address = through the gateway
+      KC_HTTP_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin           # admin console: http://localhost:8090/auth/admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ./keycloak/learninghub-realm.json:/opt/keycloak/data/import/learninghub-realm.json:ro
+    healthcheck:
+      # the image has no curl/wget, so ask for the realm's discovery document over bash /dev/tcp
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /auth/realms/learninghub/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q issuer <&3"]
+      interval: 10s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [lh-internal]
+    restart: unless-stopped
+
+  # Fake mail server: catches Keycloak's password-reset emails (inbox UI on 8025).
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+    networks: [lh-internal]
+
   discovery-service:
     build: ./discovery-service
     ports:
@@ -56,10 +95,13 @@ services:
     environment:
       EUREKA_URL: http://discovery-service:8761/eureka
       ENROLLMENT_URL: http://enrollment-service:8104
+      KEYCLOAK_URL: http://keycloak:8080
     ports:
       - "8090:8080"
     depends_on:
       discovery-service:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     networks: [lh-internal]
     restart: unless-stopped
@@ -85,6 +127,8 @@ services:
       ENROLLMENT_URL: http://enrollment-service:8104
       EUREKA_ENABLED: "true"      # register with discovery-service
       EUREKA_URL: http://discovery-service:8761/eureka
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/auth/realms/learninghub/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8090/auth/realms/learninghub
     ports:
       - "8103:8103"
     depends_on:
@@ -111,6 +155,8 @@ services:
       SCHEDULE_URL: http://schedule-service      # Eureka name, resolved by the load balancer
       EUREKA_ENABLED: "true"      # register with discovery-service
       EUREKA_URL: http://discovery-service:8761/eureka
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/auth/realms/learninghub/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8090/auth/realms/learninghub
     ports:
       - "8107:8107"
     depends_on:

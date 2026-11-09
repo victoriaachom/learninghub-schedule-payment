@@ -9,6 +9,17 @@ spring:
       server:
         webflux:
           routes:
+            # Keycloak (login, token, registration, forgot-password pages) behind the
+            # same single origin: http://localhost:8090/auth/...
+            - id: keycloak
+              uri: ${KEYCLOAK_URL:http://keycloak:8080}
+              predicates:
+                - Path=/auth/**
+            # Landing page users return to after signing up or resetting a password
+            - id: welcome
+              uri: ${ENROLLMENT_URL:http://enrollment-service:8104}
+              predicates:
+                - Path=/welcome
             # lb:// = look the service up in Eureka and load-balance across its instances
             - id: schedule-service
               uri: lb://schedule-service

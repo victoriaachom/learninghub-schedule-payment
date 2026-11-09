@@ -1,31 +1,39 @@
 package edu.lms.service;
 
-import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Set;
+import java.util.stream.Collectors;
 
+/**
+ * Who is calling, read from the Keycloak access token that Spring Security has
+ * already validated (signature, expiry, issuer):
+ *   username = the preferred_username claim
+ *   role     = the strongest realm role in realm_access.roles (admin > teacher > student)
+ *
+ * In Phase 1 this read X-User / X-Role headers; that stand-in is gone, so a
+ * caller can no longer claim to be someone else.
+ */
 @Component
 public class CallerResolver {
 
-    private final String defaultUser;
-    private final String defaultRole;
-
-    public CallerResolver(@Value("${lms.dev-user:student1}") String defaultUser,
-                          @Value("${lms.dev-role:student}") String defaultRole) {
-        this.defaultUser = defaultUser;
-        this.defaultRole = defaultRole;
-    }
-
     public Caller current() {
-        HttpServletRequest request =
-                ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
-        String user = request.getHeader("X-User");
-        String role = request.getHeader("X-Role");
-        return new Caller(
-                user == null || user.isBlank() ? defaultUser : user.trim(),
-                role == null || role.isBlank() ? defaultRole : role.trim().toLowerCase());
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!(auth instanceof JwtAuthenticationToken token)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A bearer token is required");
+        }
+        Set<String> roles = token.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(a -> a.startsWith("ROLE_"))
+                .map(a -> a.substring(5))
+                .collect(Collectors.toSet());
+        String role = roles.contains("admin") ? "admin" : roles.contains("teacher") ? "teacher" : "student";
+        return new Caller(token.getToken().getClaimAsString("preferred_username"), role);
     }
 }

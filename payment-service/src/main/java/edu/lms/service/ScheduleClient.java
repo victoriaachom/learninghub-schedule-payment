@@ -34,7 +34,9 @@ public class ScheduleClient {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(1000);
         factory.setReadTimeout(2000);
-        this.rest = loadBalanced.clone().baseUrl(baseUrl).requestFactory(factory).build();
+        this.rest = loadBalanced.clone().baseUrl(baseUrl).requestFactory(factory)
+                .requestInterceptor(new BearerTokenForwarder())   // pass the caller's token on
+                .build();
     }
 
     /** The term containing today, else the one flagged current; empty if schedule-service is unavailable. */

@@ -1,0 +1,203 @@
+{
+  "realm": "learninghub",
+  "displayName": "LearningHub",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "verifyEmail": false,
+  "accessTokenLifespan": 1800,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "noreply@learninghub.edu",
+    "fromDisplayName": "LearningHub",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
+  "roles": {
+    "realm": [
+      {"name": "offline_access", "description": "Offline access (built-in)"},
+      {"name": "uma_authorization", "description": "UMA authorization (built-in)"},
+      {
+        "name": "admin",
+        "description": "Runs the school: all data, admin writes"
+      },
+      {
+        "name": "teacher",
+        "description": "Teaches classes"
+      },
+      {
+        "name": "student",
+        "description": "Enrols, learns, pays tuition"
+      },
+      {
+        "name": "default-roles-learninghub",
+        "description": "Given to every new user, so self-registered users are students",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "offline_access",
+            "uma_authorization",
+            "student"
+          ]
+        }
+      }
+    ]
+  },
+  "defaultRole": {
+    "name": "default-roles-learninghub",
+    "composite": true,
+    "clientRole": false
+  },
+  "clients": [
+    {
+      "clientId": "learninghub-web",
+      "name": "LearningHub web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:8090/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "protocol": "openid-connect"
+    }
+  ],
+  "users": [
+    {
+      "username": "student1",
+      "enabled": true,
+      "email": "student1@learninghub.edu",
+      "emailVerified": true,
+      "firstName": "Sam",
+      "lastName": "Student",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "student"
+      ]
+    },
+    {
+      "username": "jsmith",
+      "enabled": true,
+      "email": "jsmith@learninghub.edu",
+      "emailVerified": true,
+      "firstName": "John",
+      "lastName": "Smith",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "student"
+      ]
+    },
+    {
+      "username": "mgarcia",
+      "enabled": true,
+      "email": "mgarcia@learninghub.edu",
+      "emailVerified": true,
+      "firstName": "Maria",
+      "lastName": "Garcia",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "student"
+      ]
+    },
+    {
+      "username": "alee",
+      "enabled": true,
+      "email": "alee@learninghub.edu",
+      "emailVerified": true,
+      "firstName": "Alex",
+      "lastName": "Lee",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "student"
+      ]
+    },
+    {
+      "username": "janderson",
+      "enabled": true,
+      "email": "janderson@learninghub.edu",
+      "emailVerified": true,
+      "firstName": "John",
+      "lastName": "Anderson",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "teacher"
+      ]
+    },
+    {
+      "username": "ppatel",
+      "enabled": true,
+      "email": "ppatel@learninghub.edu",
+      "emailVerified": true,
+      "firstName": "Priya",
+      "lastName": "Patel",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "teacher"
+      ]
+    },
+    {
+      "username": "admin1",
+      "enabled": true,
+      "email": "admin1@learninghub.edu",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ]
+    }
+  ]
+}

@@ -14,6 +14,14 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate            # Flyway owns the schema; Hibernate only checks it matches
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Keycloak's public keys, fetched inside Docker (keycloak:8080)
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://keycloak:8080/auth/realms/learninghub/protocol/openid-connect/certs}
+          # tokens are issued for the public address, through the gateway
+          issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:8090/auth/realms/learninghub}
   flyway:
     locations: classpath:db/migration   # dev adds classpath:db/seed through config-service
 
@@ -24,8 +32,6 @@ server:
 
 lms:
   enrollment-url: ${ENROLLMENT_URL:http://enrollment-service:8104}
-  dev-user: ${LMS_DEV_USER:student1}   # used when a request has no X-User header (Phase 1)
-  dev-role: ${LMS_DEV_ROLE:student}
   zone: ${LMS_ZONE:America/Phoenix}    # "today" is computed in this time zone
   environment-label: "NO PROFILE CONFIG - config-service was not reachable at startup"
 

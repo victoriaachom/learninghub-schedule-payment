@@ -2,6 +2,8 @@ package edu.lms.service;
 
 import edu.lms.service.ScheduleDtos.*;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -16,6 +18,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/schedule")
 public class ScheduleController {
+
+    private static final Logger log = LoggerFactory.getLogger(ScheduleController.class);
 
     private final ScheduleService service;
     private final CallerResolver callers;
@@ -89,7 +93,12 @@ public class ScheduleController {
     // ---------- terms: every other service reads them here; writes are admin only ----------
 
     @GetMapping("/terms")
-    public List<Term> listTerms() { return service.listTerms(); }
+    public List<Term> listTerms() {
+        // payment-service calls this with the user's forwarded token: the log shows whose token arrived
+        Caller caller = callers.current();
+        log.info("GET /api/schedule/terms called with the bearer token of {} ({})", caller.username(), caller.role());
+        return service.listTerms();
+    }
 
     @GetMapping("/terms/{id}")
     public Term getTerm(@PathVariable String id) { return service.getTerm(id); }

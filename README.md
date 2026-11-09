@@ -1,6 +1,12 @@
 # LearningHub: schedule-service and payment-service
 
-> **Phase 2 in progress.** Requests now go through **gateway-service** on `http://localhost:8090`, which finds the services in **Eureka** (`discovery-service`, dashboard at `http://localhost:8761`). Test usernames now match the team slides: `student1`, `admin1`, `janderson`. Keycloak security is next.
+> **Phase 2 in progress.** Everything goes through **gateway-service** at `http://localhost:8090`:
+> - **API:** `/api/schedule/**`, `/api/payments/**`, routed to the instances registered in **Eureka** (dashboard `http://localhost:8761`).
+> - **Keycloak:** `/auth/**` (realm `learninghub`; admin console `http://localhost:8090/auth/admin`, user `admin` / `admin`).
+> - **Sign in / register / forgot password:** `http://localhost:8090/auth/realms/learninghub/protocol/openid-connect/auth?client_id=learninghub-web&response_type=code&scope=openid&redirect_uri=http://localhost:8090/welcome`
+> - **Password-reset emails:** Mailpit at `http://localhost:8025`.
+>
+> Every API call needs `Authorization: Bearer <token>`. Test users (password `password`): `student1`, `jsmith`, `mgarcia`, `alee` (students), `janderson`, `ppatel` (teachers), `admin1` (admin).
 
 **SFWE 410/510 Course Project, Phase 1 (Canonical Data Model)**
 Victoria Achom · part of the LearningHub team project · built on the team skeleton [David-Coulter/lms-skeleton](https://github.com/David-Coulter/lms-skeleton)

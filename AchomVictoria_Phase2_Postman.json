@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AchomVictoria_Phase2 - schedule-service & payment-service",
-    "description": "LearningHub Phase 1 tests: schedule-service (8103), payment-service (8107), config-service (8888) and the enrollment dev stub (8104).\n\nCaller identity in Phase 1 comes from the X-User / X-Role headers; requests without them act as the student 'student1'.\n\nRun against a FRESH dev database (docker compose down -v, then docker compose up --build) so the seed ids and unpaid invoices match. Set 'profile' to prod and run folder 0 to check the prod profile (folders 1-6 need dev seed data).\n\nPhase 2: folder 7 goes through the gateway (8080) and checks Eureka (8761).",
+    "description": "LearningHub Phase 2 tests for schedule-service and payment-service. Every request is authenticated with a Keycloak access token: the collection's pre-request script logs in the user named in a request's X-User header (default student1, password 'password') through the gateway and sends 'Authorization: Bearer <token>'.\n\nFolders 0-6: Phase 1 behaviour, now authenticated. Folder 7: gateway and Eureka. Folder 8: authentication, authorization and the forwarded bearer token.\n\nRun against a FRESH dev database (docker compose down -v, then docker compose up --build).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -18,7 +18,43 @@
           "const wed = new Date(monday); wed.setDate(monday.getDate() + 2);",
           "const sun = new Date(monday); sun.setDate(monday.getDate() + 6);",
           "pm.collectionVariables.set(\"wednesday\", iso(wed));",
-          "pm.collectionVariables.set(\"sunday\", iso(sun));"
+          "pm.collectionVariables.set(\"sunday\", iso(sun));",
+          "// ---- Authentication (Phase 2) ----------------------------------------------",
+          "// Each request names the user it acts as in an X-User header (default student1).",
+          "// This script logs that user in to Keycloak through the gateway (password grant),",
+          "// caches the token, and replaces X-User / X-Role with \"Authorization: Bearer <token>\".",
+          "// The services ignore X-User; only the signed token counts.",
+          "// A request with an \"X-No-Auth\" header is sent without a token (to test 401s).",
+          "if (pm.request.headers.has(\"X-No-Auth\")) {",
+          "    pm.request.headers.remove(\"X-No-Auth\");",
+          "} else {",
+          "    const user = pm.request.headers.get(\"X-User\") || \"student1\";",
+          "    pm.request.headers.remove(\"X-User\");",
+          "    pm.request.headers.remove(\"X-Role\");",
+          "    const cached = pm.collectionVariables.get(\"tok_\" + user);",
+          "    const expires = Number(pm.collectionVariables.get(\"exp_\" + user) || 0);",
+          "    if (cached && Date.now() < expires) {",
+          "        pm.request.headers.upsert({ key: \"Authorization\", value: \"Bearer \" + cached });",
+          "    } else {",
+          "        pm.sendRequest({",
+          "            url: pm.collectionVariables.get(\"gateway\") + \"/auth/realms/learninghub/protocol/openid-connect/token\",",
+          "            method: \"POST\",",
+          "            header: { \"Content-Type\": \"application/x-www-form-urlencoded\" },",
+          "            body: { mode: \"urlencoded\", urlencoded: [",
+          "                { key: \"grant_type\", value: \"password\" },",
+          "                { key: \"client_id\", value: pm.collectionVariables.get(\"clientId\") },",
+          "                { key: \"username\", value: user },",
+          "                { key: \"password\", value: pm.collectionVariables.get(\"password\") }",
+          "            ]}",
+          "        }, (err, res) => {",
+          "            if (err || res.code !== 200) { console.error(\"Keycloak login failed for \" + user, err || res.text()); return; }",
+          "            const body = res.json();",
+          "            pm.collectionVariables.set(\"tok_\" + user, body.access_token);",
+          "            pm.collectionVariables.set(\"exp_\" + user, Date.now() + (body.expires_in - 30) * 1000);",
+          "            pm.request.headers.upsert({ key: \"Authorization\", value: \"Bearer \" + body.access_token });",
+          "        });",
+          "    }",
+          "}"
         ]
       }
     }
@@ -75,6 +111,14 @@
     {
       "key": "sessionId",
       "value": ""
+    },
+    {
+      "key": "clientId",
+      "value": "learninghub-web"
+    },
+    {
+      "key": "password",
+      "value": "password"
     }
   ],
   "item": [
@@ -543,7 +587,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.sendRequest({url: pm.collectionVariables.get(\"payment\") + \"/api/payments/summary\", header: {\"X-User\": \"alee\", \"X-Role\": \"student\"}}, () => {});"
+                  "pm.sendRequest({url: pm.collectionVariables.get(\"payment\") + \"/api/payments/summary\", header: {\"Authorization\": \"Bearer \" + pm.collectionVariables.get(\"tok_alee\")}}, () => {});"
                 ]
               }
             }
@@ -1945,6 +1989,389 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8 · Security: authentication, authorization, bearer token (Phase 2)",
+      "item": [
+        {
+          "name": "Keycloak is behind the gateway (discovery document)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              }
+            ],
+            "url": "{{gateway}}/auth/realms/learninghub/.well-known/openid-configuration"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"issuer is the gateway address\", () => pm.expect(pm.response.json().issuer).to.eql(pm.collectionVariables.get(\"gateway\") + \"/auth/realms/learninghub\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authentication: log in as student1 (password grant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              }
+            ],
+            "url": "{{gateway}}/auth/realms/learninghub/protocol/openid-connect/token",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "student1"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const claims = JSON.parse(atob(pm.response.json().access_token.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
+                  "pm.test(\"token is for student1\", () => pm.expect(claims.preferred_username).to.eql(\"student1\"));",
+                  "pm.test(\"realm role student\", () => pm.expect(claims.realm_access.roles).to.include(\"student\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authentication: log in as admin1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              }
+            ],
+            "url": "{{gateway}}/auth/realms/learninghub/protocol/openid-connect/token",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "admin1"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const claims = JSON.parse(atob(pm.response.json().access_token.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
+                  "pm.test(\"realm role admin\", () => pm.expect(claims.realm_access.roles).to.include(\"admin\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authentication: wrong password is refused",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              }
+            ],
+            "url": "{{gateway}}/auth/realms/learninghub/protocol/openid-connect/token",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "student1"
+                },
+                {
+                  "key": "password",
+                  "value": "not-the-password"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401: no token through the gateway",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              }
+            ],
+            "url": "{{gateway}}/api/payments/summary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401: forged token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer not.a.real.token"
+              }
+            ],
+            "url": "{{gateway}}/api/schedule/today"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401: schedule-service needs a token too (so payment must forward one)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              }
+            ],
+            "url": "{{schedule}}/api/schedule/terms"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authorization 403: a student cannot create a term",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/schedule/terms",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"hack-2027\",\n  \"name\": \"Hack\",\n  \"startDate\": \"2027-01-01\",\n  \"endDate\": \"2027-02-01\",\n  \"isCurrent\": false,\n  \"maxCredits\": 1\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authorization 403: a teacher cannot pay tuition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "janderson"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/payments/pay",
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authorization 403: a student cannot read another student's invoice",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/payments/invoices/6/details"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authorization 200: an admin can audit any invoice",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "admin1"
+              }
+            ],
+            "url": "{{gateway}}/api/payments/invoices/6/details"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Maria's invoice\", () => pm.expect(pm.response.json().id).to.eql(6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Identity comes from the token: the X-User header is ignored",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-No-Auth",
+                "value": "true"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tok_student1}}"
+              },
+              {
+                "key": "X-User",
+                "value": "jsmith"
+              }
+            ],
+            "url": "{{gateway}}/api/payments/billing"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"still student1's profile, not jsmith's\", () => pm.expect(pm.response.json().name).to.eql(\"Sam Student\"));"
                 ]
               }
             }
