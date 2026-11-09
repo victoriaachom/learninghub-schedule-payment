@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -24,11 +25,16 @@ public class ScheduleClient {
 
     private final RestClient rest;
 
-    public ScheduleClient(@Value("${lms.schedule-url:http://schedule-service:8103}") String baseUrl) {
+    /**
+     * baseUrl is a Eureka service name (http://schedule-service), resolved by the
+     * load-balanced builder from HttpClientConfig: service discovery, no fixed port.
+     */
+    public ScheduleClient(@LoadBalanced RestClient.Builder loadBalanced,
+                          @Value("${lms.schedule-url:http://schedule-service}") String baseUrl) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(1000);
         factory.setReadTimeout(2000);
-        this.rest = RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
+        this.rest = loadBalanced.clone().baseUrl(baseUrl).requestFactory(factory).build();
     }
 
     /** The term containing today, else the one flagged current; empty if schedule-service is unavailable. */

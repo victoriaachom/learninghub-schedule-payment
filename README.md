@@ -1,5 +1,7 @@
 # LearningHub: schedule-service and payment-service
 
+> **Phase 2 in progress.** Requests now go through **gateway-service** on `http://localhost:8090`, which finds the services in **Eureka** (`discovery-service`, dashboard at `http://localhost:8761`). Test usernames now match the team slides: `student1`, `admin1`, `janderson`. Keycloak security is next.
+
 **SFWE 410/510 Course Project, Phase 1 (Canonical Data Model)**
 Victoria Achom · part of the LearningHub team project · built on the team skeleton [David-Coulter/lms-skeleton](https://github.com/David-Coulter/lms-skeleton)
 
@@ -117,13 +119,13 @@ Authentication (Keycloak JWT) arrives in Phase 2. Until then, the caller comes f
 
 | Header | Example | Default when missing |
 |---|---|---|
-| `X-User` | `sstudent`, `janderson`, `admin` | `sstudent` |
+| `X-User` | `student1`, `janderson`, `admin` | `student1` |
 | `X-Role` | `student`, `teacher`, `admin` | `student` |
 
 Only `CallerResolver.java` reads these headers. In Phase 2 it will read the token instead, and nothing else changes.
 
 Seed users:
-- Students: `sstudent`, `jsmith`, and `mgarcia` (has an overdue invoice). Any other student username, e.g. `alee`, has no invoice yet.
+- Students: `student1`, `jsmith`, and `mgarcia` (has an overdue invoice). Any other student username, e.g. `alee`, has no invoice yet.
 - Teachers: `ppatel`, `janderson` and others.
 - Admin: `admin`.
 

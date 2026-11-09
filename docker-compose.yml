@@ -4,8 +4,12 @@
 #   PROFILE=prod docker compose up --build     # prod profile
 #   docker compose down -v                     # stop and wipe the database
 #
-# postgres and config-service must be healthy before the business services
-# start, so they always receive their profile configuration.
+# Entry point: gateway-service on http://localhost:8090 routes /api/schedule/**
+# and /api/payments/** to the services it finds in Eureka (discovery-service,
+# dashboard on http://localhost:8761).
+#
+# postgres, config-service and discovery-service must be healthy before the
+# business services start, so they receive their profile and can register.
 
 services:
   postgres:
@@ -36,6 +40,30 @@ services:
     networks: [lh-internal]
     restart: unless-stopped
 
+  discovery-service:
+    build: ./discovery-service
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8761/actuator/health || exit 1"]
+      interval: 5s
+      retries: 20
+    networks: [lh-internal]
+    restart: unless-stopped
+
+  gateway-service:
+    build: ./gateway-service
+    environment:
+      EUREKA_URL: http://discovery-service:8761/eureka
+      ENROLLMENT_URL: http://enrollment-service:8104
+    ports:
+      - "8090:8080"
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+    networks: [lh-internal]
+    restart: unless-stopped
+
   # Dev stand-in for Renae's enrollment-service: fixed JSON in the team API shape.
   enrollment-service:
     image: nginx:1.27-alpine
@@ -55,13 +83,16 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       SERVER_PORT: 8103
       ENROLLMENT_URL: http://enrollment-service:8104
-      EUREKA_ENABLED: "false"     # Phase 2: discovery-service
+      EUREKA_ENABLED: "true"      # register with discovery-service
+      EUREKA_URL: http://discovery-service:8761/eureka
     ports:
       - "8103:8103"
     depends_on:
       postgres:
         condition: service_healthy
       config-service:
+        condition: service_healthy
+      discovery-service:
         condition: service_healthy
       enrollment-service:
         condition: service_started
@@ -77,14 +108,17 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       SERVER_PORT: 8107
       ENROLLMENT_URL: http://enrollment-service:8104
-      SCHEDULE_URL: http://schedule-service:8103
-      EUREKA_ENABLED: "false"     # Phase 2: discovery-service
+      SCHEDULE_URL: http://schedule-service      # Eureka name, resolved by the load balancer
+      EUREKA_ENABLED: "true"      # register with discovery-service
+      EUREKA_URL: http://discovery-service:8761/eureka
     ports:
       - "8107:8107"
     depends_on:
       postgres:
         condition: service_healthy
       config-service:
+        condition: service_healthy
+      discovery-service:
         condition: service_healthy
       enrollment-service:
         condition: service_started

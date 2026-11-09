@@ -1,0 +1,23 @@
+server:
+  port: ${SERVER_PORT:8761}
+
+spring:
+  application:
+    name: discovery-service
+
+eureka:
+  instance:
+    hostname: discovery-service
+  client:
+    register-with-eureka: false   # the registry does not register with itself
+    fetch-registry: false
+  server:
+    enable-self-preservation: false        # dev/demo: drop stopped instances quickly
+    eviction-interval-timer-in-ms: 5000
+    response-cache-update-interval-ms: 3000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

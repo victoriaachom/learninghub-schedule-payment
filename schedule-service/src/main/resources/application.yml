@@ -24,7 +24,7 @@ server:
 
 lms:
   enrollment-url: ${ENROLLMENT_URL:http://enrollment-service:8104}
-  dev-user: ${LMS_DEV_USER:sstudent}   # used when a request has no X-User header (Phase 1)
+  dev-user: ${LMS_DEV_USER:student1}   # used when a request has no X-User header (Phase 1)
   dev-role: ${LMS_DEV_ROLE:student}
   zone: ${LMS_ZONE:America/Phoenix}    # "today" is computed in this time zone
   environment-label: "NO PROFILE CONFIG - config-service was not reachable at startup"
@@ -33,9 +33,11 @@ eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://discovery-service:8761/eureka}
-    enabled: ${EUREKA_ENABLED:false}    # Phase 2
+    enabled: ${EUREKA_ENABLED:false}    # compose turns this on; off = run standalone
+    registry-fetch-interval-seconds: 5
   instance:
     prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 5    # registers within seconds of starting
 
 management:
   endpoints:

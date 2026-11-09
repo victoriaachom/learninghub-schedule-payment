@@ -1,0 +1,47 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            # lb:// = look the service up in Eureka and load-balance across its instances
+            - id: schedule-service
+              uri: lb://schedule-service
+              predicates:
+                - Path=/api/schedule/**
+            - id: payment-service
+              uri: lb://payment-service
+              predicates:
+                - Path=/api/payments/**
+            # The enrollment dev stub is plain nginx and does not register with Eureka,
+            # so it is routed by its fixed address. With Renae's real service: lb://enrollment-service
+            - id: enrollment-service
+              uri: ${ENROLLMENT_URL:http://enrollment-service:8104}
+              predicates:
+                - Path=/api/enrollment/**
+    loadbalancer:
+      cache:
+        ttl: 5s            # pick up new or stopped instances quickly
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://discovery-service:8761/eureka}
+    registry-fetch-interval-seconds: 5
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 5
+
+management:
+  endpoint:
+    gateway:
+      access: unrestricted
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway     # GET /actuator/gateway/routes lists the routes

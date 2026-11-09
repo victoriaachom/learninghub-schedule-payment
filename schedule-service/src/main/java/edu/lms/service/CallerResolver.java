@@ -13,7 +13,7 @@ public class CallerResolver {
     private final String defaultUser;
     private final String defaultRole;
 
-    public CallerResolver(@Value("${lms.dev-user:sstudent}") String defaultUser,
+    public CallerResolver(@Value("${lms.dev-user:student1}") String defaultUser,
                           @Value("${lms.dev-role:student}") String defaultRole) {
         this.defaultUser = defaultUser;
         this.defaultRole = defaultRole;
