@@ -3,6 +3,8 @@
 #   docker compose up --build                  # dev profile (PROFILE in .env)
 #   PROFILE=prod docker compose up --build     # prod profile
 #   docker compose down -v                     # stop and wipe the database
+#   docker compose --profile scale up -d schedule-service-2   # 2nd instance
+#   docker compose --profile stress run --rm gatling          # stress test
 #
 # Entry point: gateway-service on http://localhost:8090 routes /api/schedule/**
 # and /api/payments/** to the services it finds in Eureka (discovery-service,
@@ -118,6 +120,7 @@ services:
 
   schedule-service:
     build: ./schedule-service
+    image: learninghub/schedule-service        # shared with schedule-service-2
     environment:
       SPRING_PROFILES_ACTIVE: ${PROFILE}
       DB_URL: jdbc:postgresql://postgres:5432/scheduledb
@@ -131,6 +134,37 @@ services:
       KEYCLOAK_ISSUER: http://localhost:8090/auth/realms/learninghub
     ports:
       - "8103:8103"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      enrollment-service:
+        condition: service_started
+    networks: [lh-internal]
+    restart: unless-stopped
+
+
+  # Scalability / resilience demo: a SECOND schedule-service instance (same image,
+  # same database). It registers in Eureka under the same name, and the gateway
+  # load-balances between the two.  Start it with:
+  #   docker compose --profile scale up -d schedule-service-2
+  schedule-service-2:
+    profiles: ["scale"]
+    image: learninghub/schedule-service        # shared with schedule-service-2
+    environment:
+      SPRING_PROFILES_ACTIVE: ${PROFILE}
+      DB_URL: jdbc:postgresql://postgres:5432/scheduledb
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SERVER_PORT: 8103
+      ENROLLMENT_URL: http://enrollment-service:8104
+      EUREKA_ENABLED: "true"      # register with discovery-service
+      EUREKA_URL: http://discovery-service:8761/eureka
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/auth/realms/learninghub/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8090/auth/realms/learninghub
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,6 +204,21 @@ services:
         condition: service_started
     networks: [lh-internal]
     restart: unless-stopped
+
+  # Gatling stress test through the gateway (HTML report in ./gatling/results).
+  #   docker compose --profile stress run --rm gatling
+  #   USERS=100 DURATION_SECONDS=90 docker compose --profile stress run --rm gatling
+  gatling:
+    build: ./gatling
+    profiles: ["stress"]
+    environment:
+      BASE_URL: http://gateway-service:8080
+      USERS: ${USERS:-50}
+      RAMP_SECONDS: ${RAMP_SECONDS:-20}
+      DURATION_SECONDS: ${DURATION_SECONDS:-60}
+    volumes:
+      - ./gatling/results:/app/target/gatling
+    networks: [lh-internal]
 
 networks:
   lh-internal:

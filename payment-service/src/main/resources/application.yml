@@ -22,6 +22,10 @@ spring:
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://keycloak:8080/auth/realms/learninghub/protocol/openid-connect/certs}
           # tokens are issued for the public address, through the gateway
           issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:8090/auth/realms/learninghub}
+  cloud:
+    loadbalancer:
+      cache:
+        ttl: 5s            # notice a stopped schedule-service instance within seconds
   flyway:
     locations: classpath:db/migration   # dev adds classpath:db/seed through config-service
 
@@ -44,6 +48,7 @@ eureka:
   instance:
     prefer-ip-address: true
     lease-renewal-interval-in-seconds: 5    # registers within seconds of starting
+    lease-expiration-duration-in-seconds: 15   # a crashed instance is dropped within 15 s
 
 management:
   endpoints:

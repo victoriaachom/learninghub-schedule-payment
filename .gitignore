@@ -14,3 +14,7 @@ newman/
 # macOS
 .DS_Store
 .env
+
+# Gatling HTML reports (regenerate with: docker compose --profile stress run --rm gatling)
+gatling/results/*
+!gatling/results/.gitkeep

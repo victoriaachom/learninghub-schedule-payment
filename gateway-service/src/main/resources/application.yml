@@ -8,6 +8,23 @@ spring:
     gateway:
       server:
         webflux:
+          # Resilience: never wait forever on a slow or dead instance...
+          httpclient:
+            connect-timeout: 1000
+            response-timeout: 5s
+          # ...and retry a failed read on another instance (lb:// picks again on each try)
+          default-filters:
+            - name: Retry
+              args:
+                retries: 2
+                methods: GET
+                series: SERVER_ERROR
+                exceptions: java.io.IOException, org.springframework.cloud.gateway.support.TimeoutException, org.springframework.cloud.gateway.support.NotFoundException
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 500ms
+                  factor: 2
+                  basedOnPreviousValue: false
           routes:
             # Keycloak (login, token, registration, forgot-password pages) behind the
             # same single origin: http://localhost:8090/auth/...
@@ -47,6 +64,7 @@ eureka:
   instance:
     prefer-ip-address: true
     lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
 
 management:
   endpoint:
